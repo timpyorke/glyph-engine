@@ -82,3 +82,16 @@ pub fn mono() -> FilterPreset {
         grain_intensity: 0.5,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_cubes_parse() {
+        // load_or_identity hides a broken file behind an identity LUT, so check each one here.
+        for (name, cube) in [("vintage", VINTAGE_CUBE), ("fuji", FUJI_CUBE), ("kodak", KODAK_CUBE), ("mono", MONO_CUBE)] {
+            assert!(Lut3d::from_cube_str(cube).is_some(), "{}.cube does not parse", name);
+        }
+    }
+}

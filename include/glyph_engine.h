@@ -10,6 +10,10 @@
 #define GLYPH_FLIP_X 1u
 #define GLYPH_FLIP_Y 2u
 
+// YCbCr matrix of a full-range camera buffer, for glyph_yuv_to_rgba.
+#define GLYPH_YUV_BT601 0u
+#define GLYPH_YUV_BT709 1u
+
 bool glyph_apply_filter(uint8_t *pixels, size_t len, int32_t w, int32_t h, int32_t filter);
 
 bool glyph_apply_custom(uint8_t *pixels, size_t len, int32_t w, int32_t h,
@@ -26,7 +30,7 @@ bool glyph_yuv_to_rgba(const uint8_t *y, size_t y_len,
                        const uint8_t *v, size_t v_len,
                        int32_t w, int32_t h,
                        int32_t y_row_stride, int32_t uv_row_stride, int32_t uv_pixel_stride,
-                       uint8_t *out, size_t out_len);
+                       uint32_t matrix, uint8_t *out, size_t out_len);
 
 bool glyph_rgba_to_nv12(const uint8_t *rgba, size_t rgba_len, int32_t w, int32_t h,
                         uint8_t *out, size_t out_len, uint32_t flip);

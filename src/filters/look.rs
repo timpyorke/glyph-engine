@@ -168,10 +168,14 @@ pub fn bake(look: &Look) -> Lut3d {
 
 /// Baked grade for filter [id], built on first use and kept for the life of the process.
 pub fn baked_grade(id: i32, look: &Look) -> &'static Lut3d {
+    if let Some(&lut) = BAKED.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
+        return lut;
+    }
+    // Bake without the lock: other filters stay available meanwhile, and the rayon bake can never
+    // wait on a lock its own thread holds. Two threads racing on one ID both bake; the first wins.
+    let baked = bake(look);
     let mut cache = BAKED.lock().unwrap_or_else(|e| e.into_inner());
-    cache
-        .entry(id)
-        .or_insert_with(|| Box::leak(Box::new(bake(look))))
+    cache.entry(id).or_insert_with(|| Box::leak(Box::new(baked)))
 }
 
 /// Box-downsampled copy used for softness and glow, sampled back with bilinear filtering.

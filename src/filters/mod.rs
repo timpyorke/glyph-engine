@@ -7,6 +7,7 @@ pub mod presets;
 pub mod stock;
 
 use look::{Look, BASE};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Added to a filter ID to switch the look's vignette off.
 pub const NO_VIGNETTE: i32 = 1_000_000;
@@ -100,13 +101,17 @@ pub fn apply_custom(pixels: &mut [u8], width: usize, height: usize, color: color
     look::apply_look(pixels, width, height, &look, &grade, frame_seed(pixels));
 }
 
-/// Frame-varying seed based on pixel content so grain dances between frames.
+/// Counts filtered frames, so the grain moves even when the picture doesn't (a black or clipped corner).
+static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
+
+/// Frame-varying seed so grain dances between frames: a per-call counter mixed with pixel content.
 fn frame_seed(pixels: &[u8]) -> u32 {
-    if pixels.len() >= 4 {
+    let content = if pixels.len() >= 4 {
         u32::from_le_bytes([pixels[0], pixels[1], pixels[2], pixels[3]])
     } else {
         0x12345678
-    }
+    };
+    content ^ FRAME_COUNT.fetch_add(1, Ordering::Relaxed).wrapping_mul(0x9e37_79b9)
 }
 
 #[cfg(test)]
@@ -397,6 +402,16 @@ mod tests {
         assert!(pixels[0] as i32 - pixels[2] as i32 > 60, "GRD should keep colour, got {:?}", &pixels[..3]);
         let (dark, light) = (pixels[4] as i32, pixels[8] as i32);
         assert!(light - dark > 56 + 8, "GRD should add contrast: {} -> {}", dark, light);
+    }
+
+    #[test]
+    fn test_grain_moves_on_an_unchanging_frame() {
+        // A flat frame has the same first pixel every time; the grain must still change.
+        let flat = vec![60u8; 32 * 32 * 4];
+        let (mut a, mut b) = (flat.clone(), flat.clone());
+        apply_filter(&mut a, 32, 32, 100);
+        apply_filter(&mut b, 32, 32, 100);
+        assert_ne!(a, b, "grain should differ between consecutive frames");
     }
 
     #[test]

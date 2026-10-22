@@ -1,6 +1,30 @@
 use rayon::prelude::*;
 
-/// BT.601 full-range YUV_420_888 -> RGBA. `strides` is (y_row, uv_row, uv_pixel).
+/// YCbCr matrix of a full-range camera buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Matrix {
+    /// Android camera frames (JFIF).
+    Bt601,
+    /// HD video formats, e.g. iPhone camera buffers.
+    Bt709,
+}
+
+impl Matrix {
+    /// From the C ABI's `GLYPH_YUV_*` value; anything unknown is BT.601.
+    pub fn from_raw(raw: u32) -> Self {
+        if raw == 1 { Matrix::Bt709 } else { Matrix::Bt601 }
+    }
+
+    /// (V->R, U->G, V->G, U->B) in 1/1024 units.
+    fn coefficients(self) -> (i32, i32, i32, i32) {
+        match self {
+            Matrix::Bt601 => (1404, 346, 715, 1774),
+            Matrix::Bt709 => (1613, 192, 479, 1900),
+        }
+    }
+}
+
+/// Full-range YUV_420_888 -> RGBA in [matrix]. `strides` is (y_row, uv_row, uv_pixel).
 /// Returns false (leaving `out` untouched) when any buffer is too small for `w` x `h`.
 pub fn yuv_to_rgba(
     y: &[u8],
@@ -9,9 +33,11 @@ pub fn yuv_to_rgba(
     w: usize,
     h: usize,
     strides: (usize, usize, usize),
+    matrix: Matrix,
     out: &mut [u8],
 ) -> bool {
     let (y_stride, uv_stride, uv_ps) = strides;
+    let (rv, gu, gv, bu) = matrix.coefficients();
     if w == 0 || h == 0 || out.len() < w * h * 4 {
         return false;
     }
@@ -34,10 +60,10 @@ pub fn yuv_to_rgba(
                 let u_val = u[uv] as i32 - 128;
                 let v_val = v[uv] as i32 - 128;
 
-                // BT.601 full-range integer math
-                px[0] = (y_val + ((v_val * 1404) >> 10)).clamp(0, 255) as u8;
-                px[1] = (y_val - ((u_val * 346 + v_val * 715) >> 10)).clamp(0, 255) as u8;
-                px[2] = (y_val + ((u_val * 1774) >> 10)).clamp(0, 255) as u8;
+                // Full-range integer math
+                px[0] = (y_val + ((v_val * rv) >> 10)).clamp(0, 255) as u8;
+                px[1] = (y_val - ((u_val * gu + v_val * gv) >> 10)).clamp(0, 255) as u8;
+                px[2] = (y_val + ((u_val * bu) >> 10)).clamp(0, 255) as u8;
                 px[3] = 255;
             }
         });
@@ -54,7 +80,8 @@ pub const FLIP_Y: u32 = 2;
 pub fn rgba_to_nv12(rgba: &[u8], w: usize, h: usize, out: &mut [u8], flip: u32) -> bool {
     let y_size = w * h;
     let uv_size = (w / 2) * (h / 2) * 2;
-    if w == 0 || h == 0 || rgba.len() < y_size * 4 || out.len() < y_size + uv_size {
+    // Below 2x2 there is no chroma sample to write (and a zero chunk size would panic).
+    if w < 2 || h < 2 || rgba.len() < y_size * 4 || out.len() < y_size + uv_size {
         return false;
     }
     let (y_plane, uv_plane) = out[..y_size + uv_size].split_at_mut(y_size);
@@ -133,17 +160,37 @@ mod tests {
     }
 
     #[test]
+    fn nv12_rejects_frames_without_chroma() {
+        let rgba = vec![255u8; 4 * 4];
+        let mut out = vec![0u8; 16];
+        assert!(!rgba_to_nv12(&rgba, 1, 4, &mut out, 0));
+        assert!(!rgba_to_nv12(&rgba, 4, 1, &mut out, 0));
+    }
+
+    #[test]
     fn yuv_rejects_short_planes() {
         let mut out = vec![0u8; 16];
-        assert!(!yuv_to_rgba(&[0; 3], &[0; 1], &[0; 1], 2, 2, (2, 2, 2), &mut out));
+        assert!(!yuv_to_rgba(&[0; 3], &[0; 1], &[0; 1], 2, 2, (2, 2, 2), Matrix::Bt601, &mut out));
     }
 
     #[test]
     fn yuv_grey_stays_grey() {
         let y = [128u8; 4];
         let uv = [128u8; 2];
+        for matrix in [Matrix::Bt601, Matrix::Bt709] {
+            let mut out = vec![0u8; 16];
+            assert!(yuv_to_rgba(&y, &uv, &uv, 2, 2, (2, 2, 2), matrix, &mut out));
+            assert!(out.chunks(4).all(|p| p == [128, 128, 128, 255]));
+        }
+    }
+
+    #[test]
+    fn bt709_decodes_its_own_red() {
+        // Pure red encoded with BT.709 full-range: Y 54, Cb 99, Cr 255.
+        let (y, u, v) = ([54u8; 4], [99u8; 1], [255u8; 1]);
         let mut out = vec![0u8; 16];
-        assert!(yuv_to_rgba(&y, &uv, &uv, 2, 2, (2, 2, 2), &mut out));
-        assert!(out.chunks(4).all(|p| p == [128, 128, 128, 255]));
+        assert!(yuv_to_rgba(&y, &u, &v, 2, 2, (2, 2, 2), Matrix::Bt709, &mut out));
+        let p = &out[..3];
+        assert!(p[0] >= 250 && p[1] <= 5 && p[2] <= 5, "BT.709 red decoded as {:?}", p);
     }
 }

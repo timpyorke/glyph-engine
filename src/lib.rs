@@ -195,7 +195,7 @@ pub extern "system" fn Java_com_codenour_glyphcam_native_RustBridge_yuvToRgbaInt
             return Ok(JNI_FALSE);
         };
         let strides = (dim(y_row_stride), dim(uv_row_stride), dim(uv_pixel_stride));
-        Ok(if yuv::yuv_to_rgba(y, u, v, dim(width), dim(height), strides, out) {
+        Ok(if yuv::yuv_to_rgba(y, u, v, dim(width), dim(height), strides, yuv::Matrix::Bt601, out) {
             JNI_TRUE
         } else {
             JNI_FALSE

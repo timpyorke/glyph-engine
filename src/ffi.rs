@@ -97,7 +97,7 @@ pub unsafe extern "C" fn glyph_apply_frame(
 }
 
 /// Full-range YUV 4:2:0 planes -> RGBA. For a bi-planar NV12 camera buffer pass the CbCr plane as
-/// `u` and the same plane + 1 as `v`, with `uv_pixel_stride` 2.
+/// `u` and the same plane + 1 as `v`, with `uv_pixel_stride` 2. `matrix` is a `GLYPH_YUV_*` value.
 #[no_mangle]
 pub unsafe extern "C" fn glyph_yuv_to_rgba(
     y: *const u8,
@@ -111,6 +111,7 @@ pub unsafe extern "C" fn glyph_yuv_to_rgba(
     y_row_stride: i32,
     uv_row_stride: i32,
     uv_pixel_stride: i32,
+    matrix: u32,
     out: *mut u8,
     out_len: usize,
 ) -> bool {
@@ -121,7 +122,7 @@ pub unsafe extern "C" fn glyph_yuv_to_rgba(
             return false;
         };
         let strides = (dim(y_row_stride), dim(uv_row_stride), dim(uv_pixel_stride));
-        yuv::yuv_to_rgba(y, u, v, dim(w), dim(h), strides, out)
+        yuv::yuv_to_rgba(y, u, v, dim(w), dim(h), strides, yuv::Matrix::from_raw(matrix), out)
     })
 }
 
@@ -167,7 +168,7 @@ mod tests {
         let ok = unsafe {
             glyph_yuv_to_rgba(
                 y.as_ptr(), y.len(), uv.as_ptr(), uv.len(), uv.as_ptr().add(1), uv.len() - 1,
-                w as i32, h as i32, w as i32, w as i32, 2, out.as_mut_ptr(), out.len(),
+                w as i32, h as i32, w as i32, w as i32, 2, 0, out.as_mut_ptr(), out.len(),
             )
         };
         assert!(ok);
