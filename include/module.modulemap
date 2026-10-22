@@ -1,0 +1,4 @@
+module GlyphEngineFFI {
+    header "glyph_engine.h"
+    export *
+}

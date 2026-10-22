@@ -1,0 +1,15 @@
+[package]
+name = "glyph-engine"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "glyph_engine"
+crate-type = ["cdylib"] # Critical for JNI
+
+[dependencies]
+# For the JNI bindings
+jni = "0.21"
+# For fast pixel manipulation
+rayon = "1.10"
+once_cell = "1.21.3"
